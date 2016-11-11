@@ -13,6 +13,9 @@ def lual():
     recog = sr.Recognizer()
     audio = None
     tstamp = "00"
+    if not os.path.exists('memory'):
+        # ensure the memory folder exists
+        os.makedirs('memory')
     conn = sqlite3.connect("memory/mem.db")
     mode = "cmd"  # lrn, dct, prg
     wav_pos = ""
