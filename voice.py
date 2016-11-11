@@ -17,9 +17,10 @@ def lual():
         # ensure the memory folder exists
         os.makedirs('memory')
     conn = sqlite3.connect("memory/mem.db")
+    tokens = get_tokens()
     mode = "cmd"  # lrn, dct, prg
     wav_pos = ""
-    WIT_AI_KEY = "EOQY37HEGQHNKJ7M7IZMLVPETSDPF7QC" # Wit.ai keys are 32-character uppercase alphanumeric strings
+    WIT_AI_KEY = tokens['wit.ai'] # Wit.ai keys are 32-character uppercase alphanumeric strings
 
     while True:
         match = 0
@@ -252,6 +253,16 @@ def speak_out(text, voice='slt', echo=True):
 
     if echo:
         print(text)
+
+def get_tokens():
+    tokens = {}
+
+    with open('tokens') as f:
+
+        for line in f:
+            token = line.split(' ')
+            tokens[token[0]] = token[1]
+    return tokens
 
 ''' Setup these later as fallbacks/alternates/trainers
 # recognize speech using IBM Speech to Text
