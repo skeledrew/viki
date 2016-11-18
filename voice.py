@@ -2,11 +2,11 @@
 
 
 import speech_recognition as sr
-import time
 import sqlite3
 import os
 import sys
 from subprocess import call as run
+from viki_utils import *
 
 
 def lual():
@@ -36,7 +36,7 @@ def lual():
         #if not pid:
         #    # forking child
         #    sys.exit(0)  # disable fork until other things get sorted out
-        #    understand(trans, recog, audio)
+        #    understand(trans, recog, audio, tokens)
 
         #'''
         # recognize speech using PocketSphinx
@@ -115,14 +115,6 @@ def lual():
     conn.close()
     #'''
 
-def check_match(texts):
-    # compare ps to text or g
-    if texts["ps"] == texts["g"]:
-        return 100
-
-    else:
-        return 0
-
 def next_train_wav(cnt=0):
     base = "training/arctic_"
     pad = ""
@@ -158,11 +150,8 @@ def make_adapt(trans, live=False):
     print("<s> " + sentence + " </s> (arctic_" + num + ")", "training/arctic20.transcription")
     return num
 
-def timestamp():
-    return time.strftime("%Y%m%d_%H%M%S%Z")
-
-def understand(trans, recog, audio):
-    WIT_AI_KEY = "EOQY37HEGQHNKJ7M7IZMLVPETSDPF7QC" # Wit.ai keys are 32-character uppercase alphanumeric strings
+def understand(trans, recog, audio, tokens):
+    WIT_AI_KEY = tokens['wit.ai'] # Wit.ai keys are 32-character uppercase alphanumeric strings
 
     # recognize speech using PocketSphinx
     try:
@@ -253,16 +242,6 @@ def speak_out(text, voice='slt', echo=True):
 
     if echo:
         print(text)
-
-def get_tokens():
-    tokens = {}
-
-    with open('tokens') as f:
-
-        for line in f:
-            token = line.split(' ')
-            tokens[token[0]] = token[1]
-    return tokens
 
 ''' Setup these later as fallbacks/alternates/trainers
 # recognize speech using IBM Speech to Text
