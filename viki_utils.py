@@ -3,7 +3,7 @@ import time
 
 def check_match(texts):
     # compare ps to text or g
-    if texts["ps"] == texts["g"]:
+    if texts["ps"] == texts["ggl"]:
         return 100
 
     else:
@@ -23,3 +23,12 @@ def get_tokens():
             tokens[token[0]] = token[1]
     return tokens
 
+def copy_dic(dic):
+    n_dic = {}
+
+    for itm in dic:
+        n_dic = dic[itm]
+    return n_dic
+
+def sleep(ms):
+    time.sleep(ms)

@@ -7,113 +7,48 @@ import os
 import sys
 from subprocess import call as run
 from viki_utils import *
+from multiprocessing import Process, Lock, Queue, Manager
+from multiprocessing.connection import wait
 
 
 def lual():
-    recog = sr.Recognizer()
-    audio = None
-    tstamp = "00"
+    s_mem = {}  # short term memory; make it easier to pass stuff around
+
     if not os.path.exists('memory'):
         # ensure the memory folder exists
         os.makedirs('memory')
-    conn = sqlite3.connect("memory/mem.db")
-    tokens = get_tokens()
-    mode = "cmd"  # lrn, dct, prg
-    wav_pos = ""
-    WIT_AI_KEY = tokens['wit.ai'] # Wit.ai keys are 32-character uppercase alphanumeric strings
+    s_mem['conn'] = sqlite3.connect("memory/mem.db")
+    s_mem['tokens'] = get_tokens()
+    s_mem['mode'] = "cmd"  # lrn, dct, prg
+    #wav_pos = ""
+    s_mem['llock'] = Manager().Lock()  # listen lock
+    s_mem['mlock'] = Manager().Lock()  # memory lock
+    s_mem['mainq'] = Manager().Queue()  # main queue
+    s_mem['listening'] = False
+    #s_mem['listener'] = None
+    s_mem['action'] = None
 
     while True:
-        match = 0
-        trans = {"time" : "00", "ps" : "", "g" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : wav_pos}
 
-        with sr.Microphone() as source:
-            print("Whatchasay!")
-            audio = recog.listen(source)
-            print("I heard ya! Lemme process that...")
-            trans["time"] = timestamp()
-        #pid = os.fork()
-        #
-        #if not pid:
-        #    # forking child
-        #    sys.exit(0)  # disable fork until other things get sorted out
-        #    understand(trans, recog, audio, tokens)
+        if not s_mem['listening']:
+            # ensure a listener is running
+            s_mem['listener'] = Process(target=listen, args=((s_mem, ))).start()
+        msg = None
+        s_mem['llock'].acquire()
 
-        #'''
-        # recognize speech using PocketSphinx
-        try:
-            trans["ps"] = recog.recognize_sphinx(audio)
-            print("Sphinx heard " + trans["ps"])
-
-        except sr.UnknownValueError:
-            print("Sphinx didn't understand anything you said...")
-
-        except sr.RequestError as e:
-            print("Sphinx error; {0}".format(e))
-
-        # recognize speech using Wit.ai
-        try:
-            trans["wit"] = recog.recognize_wit(audio, key=WIT_AI_KEY)
-            print("Wit.ai heard " + trans["wit"])
-
-        except sr.UnknownValueError:
-            print("Wit.ai didn't understand anything you said...")
-
-        except sr.RequestError as e:
-            print("Could not request results from Wit.ai service; {0}".format(e))
-
-        if trans["ps"] == trans["wit"] or len(trans["wit"].split()) < 4:
-            # don't use gsr
-            print("Not using Google and totally ignoring this one.")
-            trans["text"] = "ignore"
-
-        else:
-            # recognize speech using Google Speech Recognition
-            try:
-                # for testing purposes, we're just using the default API key
-                # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
-                # instead of `r.recognize_google(audio)`
-                trans["g"] = recog.recognize_google(audio)
-                print("Google heard " + trans["g"])
-
-            except sr.UnknownValueError:
-                print("Google didn't understand anything you said...")
-
-            except sr.RequestError as e:
-                print("Could not request results from Google Speech Recognition service; {0}".format(e))
-
-        if trans["ps"] == "reload" or trans["g"] == "reload" or trans["wit"] == "reload":
-            break
-
-        if trans["text"] == "ignore":
-            # ignore triffles
+        if s_mem['mainq'].empty():
+            # TODO: convert to sentinel method
+            s_mem['llock'].release()
+            sleep(100)
             continue
-        match = check_match(trans)
 
-        with open("memory/rec_" + trans["time"] + ".wav", "wb") as f:
-            f.write(audio.get_wav_data())
+        while not s_mem['mainq'].empty():
+            # rebuild s_mem
+            itm = s_mem['mainq'].get()
+            msg[itm[0]] = itm[1]
+        s_mem['llock'].release()
+        s_mem = msg
 
-        c = conn.cursor()
-
-        try:
-            # Ensure the target table exists
-            c.execute("SELECT * FROM Ears ORDER BY time")
-
-        except sqlite3.Error as e:
-
-            if e.args[0] == "no such table: Ears":
-                c.execute("CREATE TABLE Ears (time, ps_trans, g_trans, wit_trans, ibm_trans, att_trans, text, match)")
-
-            else:
-                print("Error:", e.args[0])
-        entry = (trans["time"], trans["ps"], trans["g"], "", "", "", trans["text"], match)
-        c.execute("INSERT INTO Ears VALUES (?, ?, ?, ?, ?, ?, ?, ?)", entry)
-        conn.commit()
-        c.close()
-
-        if mode == "lrn" and trans["ps"] != "training mode":
-            pass
-    conn.close()
-    #'''
 
 def next_train_wav(cnt=0):
     base = "training/arctic_"
@@ -150,66 +85,103 @@ def make_adapt(trans, live=False):
     print("<s> " + sentence + " </s> (arctic_" + num + ")", "training/arctic20.transcription")
     return num
 
-def understand(trans, recog, audio, tokens):
-    WIT_AI_KEY = tokens['wit.ai'] # Wit.ai keys are 32-character uppercase alphanumeric strings
+def understand(s_mem, action='default'):
+    trans = s_mem['trans']
+    recog = s_mem['recog']
+    audio = s_mem['audio']
 
-    # recognize speech using PocketSphinx
-    try:
-        trans["ps"] = recog.recognize_sphinx(audio)
-        print("Sphinx heard " + trans["ps"])
+    if action == 'default':
+        sentinels = []
+        engines = ['use_ps', 'use_wit']
+        s_mem['subq'] = Queue()
 
-    except sr.UnknownValueError:
-        print("Sphinx didn't understand anything you said...")
+        for engine in engines:
+            # parallel recognition
+            proc = Process(target=understand, args=((s_mem, engine)))
+            proc.start()
+            sentinels.append(proc.sentinel)
 
-    except sr.RequestError as e:
-        print("Sphinx error; {0}".format(e))
+        while sentinels:
 
-    # recognize speech using Wit.ai
-    try:
-        trans["wit"] = recog.recognize_wit(audio, key=WIT_AI_KEY)
-        print("Wit.ai heard " + trans["wit"])
+            for sentinel in wait(sentinels):
+                # remove ready (terminated) processes and check results queue
+                sentinels.remove(sentinel)
+                msg = s_mem['subq'].get()
+                s_mem['trans'][msg[0]] = msg[1]
 
-    except sr.UnknownValueError:
-        print("Wit.ai didn't understand anything you said...")
+        if len(s_mem['trans']['wit']) < 4:
+            trans['text'] = 'ignore'
+        answer(s_mem)
+        return
 
-    except sr.RequestError as e:
-        print("Could not request results from Wit.ai service; {0}".format(e))
+    if action == 'use_ps':
+        # recognize speech using PocketSphinx
 
-    if trans["ps"] == trans["wit"] or len(trans["wit"].split()) < 4:
-        # don't use gsr
-        print("Not using Google and totally ignoring this one.")
-        trans["text"] = "ignore"
+        try:
+            text = recog.recognize_sphinx(audio)
+            s_mem['subq'].put(['ps', text])
+            return
 
-    else:
+        except sr.UnknownValueError:
+            print("Sphinx didn't understand anything you said...")
+
+        except sr.RequestError as e:
+            print("Sphinx error; {0}".format(e))
+
+    if action == 'use_wit':
+        # recognize speech using Wit.ai
+        WIT_AI_KEY = s_mem['tokens']['wit.ai']
+
+        try:
+            text = recog.recognize_wit(audio, key=WIT_AI_KEY)
+            s_mem['subq'].put(['wit', text])
+            return
+
+        except sr.UnknownValueError:
+            print("Wit.ai didn't understand anything you said...")
+
+        except sr.RequestError as e:
+            print("Could not request results from Wit.ai service; {0}".format(e))
+
+    if action == 'use_ggl':
+    #if trans["ps"] == trans["wit"] or len(trans["wit"].split()) < 4:
         # recognize speech using Google Speech Recognition
+        # need to use sparingly since API use is limited
+
         try:
             # for testing purposes, we're just using the default API key
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
-            trans["g"] = recog.recognize_google(audio)
-            print("Google heard " + trans["g"])
+            text = recog.recognize_google(audio)
+            s_mem['subq'].put(['ggl', text])
+            return
 
         except sr.UnknownValueError:
             print("Google didn't understand anything you said...")
 
         except sr.RequestError as e:
             print("Could not request results from Google Speech Recognition service; {0}".format(e))
-    answer(trans)
-    sys.exit(0)  # just in case answer() doesn't exit for us
+    print('Error: Invalid action passed')
 
-def answer(trans):
-    conn = sqlite3.connect("memory/mem.db")
+def answer(s_mem):
+    #s_mem['mlock'].acquire()
+    conn = s_mem['conn']
+    trans = s_mem['trans']
 
-    if trans["ps"] == "reload" or trans["g"] == "reload" or trans["wit"] == "reload":
-        return "reload"
+    if trans["ps"] == "reload" or trans["ggl"] == "reload" or trans["wit"] == "reload":
+        s_mem['action'] = 'reload'
+        s_mem['mainq'].put(s_mem)
+        return
 
     if trans["text"] == "ignore":
         # ignore triffles
-        return "continue"
+        print('Not committing to long term memory:')
+        print(trans)
+        return
     match = check_match(trans)
 
     with open("memory/rec_" + trans["time"] + ".wav", "wb") as f:
-        f.write(audio.get_wav_data())
+        f.write(s_mem['audio'].get_wav_data())
 
     c = conn.cursor()
 
@@ -224,14 +196,15 @@ def answer(trans):
 
         else:
             print("Error:", e.args[0])
-    entry = (trans["time"], trans["ps"], trans["g"], "", "", "", trans["text"], match)
+    entry = (trans["time"], trans["ps"], trans["ggl"], "", "", "", trans["text"], match)
     c.execute("INSERT INTO Ears VALUES (?, ?, ?, ?, ?, ?, ?, ?)", entry)
     conn.commit()
     c.close()
 
-    if mode == "lrn" and trans["ps"] != "training mode":
+    if s_mem['mode'] == "lrn" and trans["ps"] != "training mode":
         pass
-    conn.close()
+    #conn.close()
+    #s_mem['mlock'].release()
     sys.exit(0)
 
 def speak_out(text, voice='slt', echo=True):
@@ -242,6 +215,29 @@ def speak_out(text, voice='slt', echo=True):
 
     if echo:
         print(text)
+
+def listen(s_mem):
+    s_mem['recog'] = sr.Recognizer()
+    s_mem['audio'] = None
+    tstamp = '00'
+    s_mem['trans'] = {"time" : "00", "ps" : "", "ggl" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : ''}
+
+    with sr.Microphone() as source:
+        s_mem['listening'] = True
+        print('Now listening...')
+        s_mem['audio'] = s_mem['recog'].listen(source)
+        print('Sending audio for processing!')
+        s_mem['trans']['time'] = timestamp()
+    s_mem['listening'] = False
+    s_mem['llock'].acquire()
+
+    for itm in s_mem:
+        # break down s_mem to avoid 'Unserializable message' error
+        s_mem['mainq'].put([itm, s_mem[itm]])
+    s_mem['llock'].release()
+    understand(s_mem)
+    #Process(target=understand, args=(s_mem)).start()
+
 
 ''' Setup these later as fallbacks/alternates/trainers
 # recognize speech using IBM Speech to Text
