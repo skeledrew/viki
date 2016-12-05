@@ -13,34 +13,35 @@ from multiprocessing.connection import wait
 
 def lual():
     s_mem = {}  # short term memory; make it easier to pass stuff around
+    o_mem = {}  # object memory; use to pass esp process-related objects
 
     if not os.path.exists('memory'):
         # ensure the memory folder exists
         os.makedirs('memory')
-    s_mem['conn'] = sqlite3.connect("memory/mem.db")
+    o_mem['conn'] = sqlite3.connect("memory/mem.db")
     s_mem['tokens'] = get_tokens()
     s_mem['mode'] = "cmd"  # lrn, dct, prg
     #wav_pos = ""
-    #s_mem['llock'] = Manager().Lock()  # listen lock
-    #s_mem['mlock'] = Manager().Lock()  # memory lock
-    mainq = Manager().Queue()  # main queue
+    o_mem['llock'] = Manager().Lock()  # listen lock
+    o_mem['mlock'] = Manager().Lock()  # memory lock
+    o_mem['mainq'] = Manager().Queue()  # main queue
     s_mem['listening'] = False
     #s_mem['listener'] = None
     s_mem['action'] = None
 
     while True:
-        s_mem['mainq'] = mainq  # should only assign when None
+        #o_mem['mainq'] = mainq  # should only assign when None
 
         if not s_mem['listening']:
             # ensure a listener is running
             s_mem['listening'] = True
-            proc = Process(target=listen, args=((s_mem, ))).start()
+            proc = Process(target=listen, args=((s_mem, o_mem))).start()
         msg = None
-        #s_mem['llock'].acquire()
+        o_mem['llock'].acquire()
 
-        if s_mem['mainq'].empty():
+        if o_mem['mainq'].empty():
             # TODO: convert to sentinel method
-            #s_mem['llock'].release()
+            o_mem['llock'].release()
             sleep(0.1)
             continue
         '''proc = Process(target=listen, args=((s_mem, )))
@@ -53,22 +54,21 @@ def lual():
                 sentinel = None'''
         msg = {}
 
-        while not s_mem['mainq'].empty():
+        while not o_mem['mainq'].empty():
             # rebuild s_mem
             itm = None
 
             try:
-                itm = s_mem['mainq'].get()
+                itm = o_mem['mainq'].get()
                 msg[itm[0]] = itm[1]
 
             except Exception as e:
                 #print('error: mq pass', itm, e)
                 pass
-        #s_mem['llock'].release()
+        o_mem['llock'].release()
         s_mem = msg
 
-def listen(s_mem):
-    print('dbg: enter listen')
+def listen(s_mem, o_mem):
     s_mem['recog'] = sr.Recognizer()
     s_mem['audio'] = None
     tstamp = '00'
@@ -81,29 +81,32 @@ def listen(s_mem):
         print('Sending audio for processing!')
         s_mem['trans']['time'] = timestamp()
     s_mem['listening'] = False
-    #s_mem['llock'].acquire()
+    o_mem['llock'].acquire()
 
     for itm in s_mem:
         # break down s_mem to partially avoid 'Unserializable message' error
-        s_mem['mainq'].put([itm, s_mem[itm]])
-    #s_mem['llock'].release()
-    #Process(target=understand, args=((s_mem, ))).start()
-    print('dbg: exit listen')
+        try:
+            o_mem['mainq'].put([itm, s_mem[itm]])
 
-def understand(s_mem, action='default'):
+        except Exception as e:
+            print('error: mq put', [itm, s_mem[itm]], e.args[0])
+            pass
+    o_mem['llock'].release()
+    Process(target=understand, args=((s_mem, o_mem))).start()
+
+def understand(s_mem, o_mem, action='default'):
     trans = s_mem['trans']
     recog = s_mem['recog']
     audio = s_mem['audio']
 
     if action == 'default':
-        print('dbg: enter understand default')
         sentinels = []
         engines = ['use_ps', 'use_wit']
-        s_mem['subq'] = Queue()
+        o_mem['subq'] = Queue()
 
         for engine in engines:
             # parallel recognition
-            proc = Process(target=understand, args=((s_mem, engine)))
+            proc = Process(target=understand, args=((s_mem, o_mem, engine)))
             proc.start()
             sentinels.append(proc.sentinel)
 
@@ -112,14 +115,12 @@ def understand(s_mem, action='default'):
             for sentinel in wait(sentinels):
                 # remove ready (terminated) processes and check results queue
                 sentinels.remove(sentinel)
-                msg = s_mem['subq'].get()
+                msg = o_mem['subq'].get()
                 s_mem['trans'][msg[0]] = msg[1]
 
         if len(s_mem['trans']['wit']) < 4:
             trans['text'] = 'ignore'
-        #answer(s_mem)
-        Process(target=answer, args=((s_mem, ))).start()
-        print('dbg: exit understand default')
+        Process(target=answer, args=((s_mem, o_mem))).start()
         return
 
     if action == 'use_ps':
@@ -128,7 +129,7 @@ def understand(s_mem, action='default'):
         try:
             text = recog.recognize_sphinx(audio)
             print('PocketSphinx heard ' + text)
-            s_mem['subq'].put(['ps', text])
+            o_mem['subq'].put(['ps', text])
             return
 
         except sr.UnknownValueError:
@@ -144,7 +145,7 @@ def understand(s_mem, action='default'):
         try:
             text = recog.recognize_wit(audio, key=WIT_AI_KEY)
             print('Wit.ai heard ' + text)
-            s_mem['subq'].put(['wit', text])
+            o_mem['subq'].put(['wit', text])
             return
 
         except sr.UnknownValueError:
@@ -164,7 +165,7 @@ def understand(s_mem, action='default'):
             # instead of `r.recognize_google(audio)`
             text = recog.recognize_google(audio)
             print('Google heard ' + text)
-            s_mem['subq'].put(['ggl', text])
+            o_mem['subq'].put(['ggl', text])
             return
 
         except sr.UnknownValueError:
@@ -174,15 +175,14 @@ def understand(s_mem, action='default'):
             print("Could not request results from Google Speech Recognition service; {0}".format(e))
     print('Error: Invalid action passed')
 
-def answer(s_mem):
-    print('dbg: enter answer')
-    s_mem['mlock'].acquire()
-    conn = s_mem['conn']
+def answer(s_mem, o_mem):
+    o_mem['mlock'].acquire()
+    conn = o_mem['conn']
     trans = s_mem['trans']
 
     if trans["ps"] == "reload" or trans["ggl"] == "reload" or trans["wit"] == "reload":
         s_mem['action'] = 'reload'
-        s_mem['mainq'].put(s_mem)
+        o_mem['mainq'].put(s_mem)
         return
 
     if trans["text"] == "ignore":
@@ -190,8 +190,7 @@ def answer(s_mem):
         print('Not committing to long term memory:')
         print(trans)
         #conn.close()
-        s_mem['mlock'].release()
-        print('dbg: exit answer')
+        o_mem['mlock'].release()
         return
     match = check_match(trans)
 
@@ -219,9 +218,7 @@ def answer(s_mem):
     if s_mem['mode'] == "lrn" and trans["ps"] != "training mode":
         pass
     #conn.close()
-    s_mem['mlock'].release()
-    print('dbg: exit answer')
-    #sys.exit(0)
+    o_mem['mlock'].release()
 
 def next_train_wav(cnt=0):
     base = "training/arctic_"
