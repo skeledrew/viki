@@ -9,28 +9,45 @@ from subprocess import call as run
 from viki_utils import *
 from multiprocessing import Process, Lock, Queue, Manager
 from multiprocessing.connection import wait
+import importlib
 
 
-def lual():
-    s_mem = {}  # short term memory; make it easier to pass stuff around
-    o_mem = {}  # object memory; use to pass esp process-related objects
+def stt(params={}):
+    # use when calling as a module
+    s_mem, o_mem = init(params)
+    '''proc = Process(target=listen, args=((s_mem, o_mem)))
+    print('dbg:', proc)
+    proc.start()
+    sentinel = []
+    sentinel = sentinel.append(proc.sentinel())
 
-    if not os.path.exists('memory'):
-        # ensure the memory folder exists
-        os.makedirs('memory')
-    o_mem['conn'] = sqlite3.connect("memory/mem.db")
-    s_mem['tokens'] = get_tokens()
-    s_mem['mode'] = "cmd"  # lrn, dct, prg
-    #wav_pos = ""
-    o_mem['llock'] = Manager().Lock()  # listen lock
-    o_mem['mlock'] = Manager().Lock()  # memory lock
-    o_mem['mainq'] = Manager().Queue()  # main queue
-    s_mem['listening'] = False
-    #s_mem['listener'] = None
-    s_mem['action'] = None
+    while sentinel:
+
+        if wait(sentinel):
+            sentinel = None'''
+    proc = Process(target=listen, args=((s_mem, o_mem))).start()
+
+    while o_mem['mainq'].empty():
+        sleep(0.1)
+    o_mem['llock'].acquire()
+
+    while not o_mem['mainq'].empty():
+        itm = None
+
+        try:
+            itm = o_mem['mainq'].get()
+
+            if itm[0] == 'trans':
+                o_mem['llock'].release()
+                return itm[1]
+
+        except:
+            pass
+
+def lual(params={}):
+    s_mem, o_mem = init(params)
 
     while True:
-        #o_mem['mainq'] = mainq  # should only assign when None
 
         if not s_mem['listening']:
             # ensure a listener is running
@@ -63,15 +80,79 @@ def lual():
                 msg[itm[0]] = itm[1]
 
             except Exception as e:
-                #print('error: mq pass', itm, e)
+                print('error: mq get', itm, e)
                 pass
         o_mem['llock'].release()
         s_mem = msg
+        action = s_mem['action']
+
+        if s_mem['trans']['ps'] == '':
+            sleep(0.2)
+            continue
+
+        if action == 'exit':
+            # kill children first?
+            print('Goodbye cruel world :\'-(')
+            break
+
+        if action == 'reload':
+
+            try:
+                importlib.reload(o_mem['cmd_mod'])
+                o_mem['callback'] = getattr(o_mem['cmd_mod'], s_mem['cb_name'])
+                print('Reloaded commands module!')
+
+            except Exception as e:
+                print('No module to reload...', e)
+
+        if action == 'delegate':
+
+            try:
+                # run external commands in another process
+                Process(target=o_mem['callback'], args=((s_mem['trans'], ))).start()
+
+            except Exception as e:
+                print('Error: delegation failed ', e)
+
+
+def init(params={}):
+    s_mem = {}  # short term memory; make it easier to pass stuff around
+    o_mem = {}  # object memory; use to pass esp process-related objects
+
+    if not os.path.exists('memory'):
+        # ensure the memory folder exists
+        os.makedirs('memory')
+    o_mem['conn'] = sqlite3.connect("memory/mem.db")
+    s_mem['tokens'] = get_tokens()
+    s_mem['mode'] = "cmd"  # lrn, dct, prg
+    #wav_pos = ""
+    o_mem['llock'] = Manager().Lock()  # listen lock
+    o_mem['mlock'] = Manager().Lock()  # memory lock
+    o_mem['mainq'] = Manager().Queue()  # main queue
+    s_mem['listening'] = False
+    #s_mem['listener'] = None
+    s_mem['action'] = None
+
+    if params:
+        # can be used to override some defaults
+
+        for key in params:
+
+            if key in ['callback', 'cmd_mod']:
+                # separate objects
+                o_mem[key] = params[key]
+
+            else:
+                s_mem[key] = params[key]
+    return s_mem, o_mem
 
 def listen(s_mem, o_mem):
+    print('dbg: enter listen')
     s_mem['recog'] = sr.Recognizer()
     s_mem['audio'] = None
     tstamp = '00'
+    c_lock = Manager().Lock()  # clone lock
+    c_queue = Manager().Queue()  # clone queue
     s_mem['trans'] = {"time" : "00", "ps" : "", "ggl" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : ''}
 
     with sr.Microphone() as source:
@@ -92,16 +173,24 @@ def listen(s_mem, o_mem):
             print('error: mq put', [itm, s_mem[itm]], e.args[0])
             pass
     o_mem['llock'].release()
-    Process(target=understand, args=((s_mem, o_mem))).start()
+    c_queue.put(0)
+    Process(target=understand, args=((s_mem, o_mem, 'default', c_queue))).start()
+    print('dbg: exit listen')
+    sys.exit(0)
 
-def understand(s_mem, o_mem, action='default'):
+def understand(s_mem, o_mem, action='default', clone=None):
     trans = s_mem['trans']
     recog = s_mem['recog']
     audio = s_mem['audio']
 
     if action == 'default':
+        print('dbg: enter understand')
+
+        clones = clone.get()
+        #print('dbg: clone count', clones)
+        #clone.put(clones+1)
         sentinels = []
-        engines = ['use_ps', 'use_wit']
+        engines = ['use_ps']
         o_mem['subq'] = Queue()
 
         for engine in engines:
@@ -118,9 +207,10 @@ def understand(s_mem, o_mem, action='default'):
                 msg = o_mem['subq'].get()
                 s_mem['trans'][msg[0]] = msg[1]
 
-        if len(s_mem['trans']['wit']) < 4:
-            trans['text'] = 'ignore'
-        Process(target=answer, args=((s_mem, o_mem))).start()
+        Process(target=remember, args=((s_mem, o_mem))).start()
+        print('dbg: exit understand')
+        answer(s_mem, o_mem)
+        sys.exit(0)
         return
 
     if action == 'use_ps':
@@ -164,7 +254,7 @@ def understand(s_mem, o_mem, action='default'):
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
             text = recog.recognize_google(audio)
-            print('Google heard ' + text)
+            #print('Google heard ' + text)
             o_mem['subq'].put(['ggl', text])
             return
 
@@ -175,22 +265,15 @@ def understand(s_mem, o_mem, action='default'):
             print("Could not request results from Google Speech Recognition service; {0}".format(e))
     print('Error: Invalid action passed')
 
-def answer(s_mem, o_mem):
+def remember(s_mem, o_mem):
     o_mem['mlock'].acquire()
     conn = o_mem['conn']
     trans = s_mem['trans']
 
-    if trans["ps"] == "reload" or trans["ggl"] == "reload" or trans["wit"] == "reload":
-        s_mem['action'] = 'reload'
-        o_mem['mainq'].put(s_mem)
-        return
-
-    if trans["text"] == "ignore":
-        # ignore triffles
-        print('Not committing to long term memory:')
-        print(trans)
-        #conn.close()
+    if len(trans["wit"].split(' ')) < 4:
+        # ignore small utterances
         o_mem['mlock'].release()
+        sys.exit(0)
         return
     match = check_match(trans)
 
@@ -219,8 +302,36 @@ def answer(s_mem, o_mem):
         pass
     #conn.close()
     o_mem['mlock'].release()
+    sys.exit(0)
+
+def answer(s_mem, o_mem={}):
+    print('dbg: enter answer')
+    trans = s_mem['trans']
+
+    if trans["wit"] == "reload" or trans["ps"] == "reload" or trans["ggl"] == "reload":
+        s_mem['action'] = 'reload'
+
+    elif trans["wit"] == "goodbye" or trans["ps"] == "goodbye" or trans["ggl"] == "goodbye":
+        s_mem['action'] = 'exit'
+
+    else:
+        s_mem['action'] = 'delegate'
+    o_mem['llock'].acquire()
+
+    for itm in s_mem:
+
+        try:
+            o_mem['mainq'].put([itm, s_mem[itm]])
+
+        except Exception as e:
+            print('error: mq put', [itm, s_mem[itm]], e.args[0])
+            pass
+    o_mem['llock'].release()
+    print('dbg: exit answer')
+    sys.exit(0)
 
 def next_train_wav(cnt=0):
+    # find next available file name in the series
     base = "training/arctic_"
     pad = ""
 
@@ -286,3 +397,28 @@ except sr.UnknownValueError:
 except sr.RequestError as e:
     print("Could not request results from AT&T Speech to Text service; {0}".format(e))
 '''
+
+def run_method(mod, meth, args=[]):
+    return getattr(mod, meth)(args)
+
+def main(args):
+
+    if len(args) == 1:
+        lual()
+        return
+    curr_name = args[0]
+
+    if os.path.isfile(args[1]):
+        # get callback method from commands script
+        try:
+            arg_mod = importlib.import_module(args[1].split('.')[0])
+            meth_name = args[0].split('/')[-1].split('.')[0]  # DEBUG: will break on Windows!!
+            #print(run_method(arg_mod, meth_name, ['my args received!!!']))
+            lual({'cb_name': meth_name, 'callback': getattr(arg_mod, meth_name), 'cmd_mod': arg_mod})
+
+        except:
+            print('Argument must be a Python script "name.ext" with a method called "' + args[0].split('/')[-1].split('.')[0] + '"')
+
+
+if __name__ == '__main__':
+    main(sys.argv)
