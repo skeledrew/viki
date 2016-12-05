@@ -17,7 +17,7 @@ def lual():
     if not os.path.exists('memory'):
         # ensure the memory folder exists
         os.makedirs('memory')
-    #s_mem['conn'] = sqlite3.connect("memory/mem.db")
+    s_mem['conn'] = sqlite3.connect("memory/mem.db")
     s_mem['tokens'] = get_tokens()
     s_mem['mode'] = "cmd"  # lrn, dct, prg
     #wav_pos = ""
