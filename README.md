@@ -8,12 +8,14 @@ Speech recognition engine/API support:
 - CMU Sphinx (works offline)
 - Google Speech Recognition
 - Wit.ai
-- Houndify API
+- Houndify API (coming soon)
+- AT&T (coming soon)
+- IBM (coming soon)
 
 ## Requirements
 To use all of the functionality of the library, you should have:
 - Python 2.6, 2.7, or 3.3+ (required)
-- Hy
+- Hy (now optional)
 - PyAudio 0.2.9+ (required only if you need to use microphone input, Microphone)
 - PocketSphinx (required only if you need to use the Sphinx recognizer, recognizer_instance.recognize_sphinx)
 - Wit.ai key (if you want to use wit.ai for speech recognition)
@@ -72,16 +74,10 @@ To quickly try it out, run python -m speech_recognition after installing.
 ## Quickstart
 Now you are ready to use viki.
 ```sh
-$ hy viki.hy
+~~$ hy viki.hy~~
+$ python3 voice.py commands.py
 ```
 
 ## Licence
-
-
-
-
-
-
-
-
+AGPLv3
 
