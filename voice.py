@@ -153,7 +153,7 @@ def listen(s_mem, o_mem):
     tstamp = '00'
     c_lock = Manager().Lock()  # clone lock
     c_queue = Manager().Queue()  # clone queue
-    s_mem['trans'] = {"time" : "00", "ps" : "", "ggl" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : ''}
+    s_mem['trans'] = {"time" : "00", "ps" : "", "ggl" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : '', 'hnd': ''}
 
     with sr.Microphone() as source:
         s_mem['listening'] = True
@@ -190,8 +190,16 @@ def understand(s_mem, o_mem, action='default', clone=None):
         #print('dbg: clone count', clones)
         #clone.put(clones+1)
         sentinels = []
-        engines = ['use_ps']
+        engines = ['use_ps']  # default engine(s)
         o_mem['subq'] = Queue()
+
+        try:
+
+            if 'engines' in s_mem and not s_mem['engines'] == []:
+                engines = s_mem['engines']
+
+        except Exception as e:
+            print('Engine set error:', e)
 
         for engine in engines:
             # parallel recognition
@@ -218,7 +226,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         try:
             text = recog.recognize_sphinx(audio)
-            print('PocketSphinx heard ' + text)
+            #print('PocketSphinx heard ' + text)
             o_mem['subq'].put(['ps', text])
             return
 
@@ -234,7 +242,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         try:
             text = recog.recognize_wit(audio, key=WIT_AI_KEY)
-            print('Wit.ai heard ' + text)
+            #print('Wit.ai heard ' + text)
             o_mem['subq'].put(['wit', text])
             return
 
@@ -414,7 +422,14 @@ def main(args):
             arg_mod = importlib.import_module(args[1].split('.')[0])
             meth_name = args[0].split('/')[-1].split('.')[0]  # DEBUG: will break on Windows!!
             #print(run_method(arg_mod, meth_name, ['my args received!!!']))
-            lual({'cb_name': meth_name, 'callback': getattr(arg_mod, meth_name), 'cmd_mod': arg_mod})
+            callback = getattr(arg_mod, meth_name)
+            extra_args = callback()
+            params = {'cb_name': meth_name, 'callback': callback, 'cmd_mod': arg_mod}
+
+            for itm in extra_args:
+                # get args from the target module
+                params[itm] = extra_args[itm]
+            lual(params)
 
         except:
             print('Argument must be a Python script "name.ext" with a method called "' + args[0].split('/')[-1].split('.')[0] + '"')
