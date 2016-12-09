@@ -1,8 +1,8 @@
 # VIKI Speech Recognition
 
-## Purpose of this application: 
+## Purpose of this application
 
-This application is modified from Uberi/speech_recognition (https://github.com/Uberi/speech_recognition)
+This application uses the Uberi/speech_recognition (https://github.com/Uberi/speech_recognition)
 Library for performing speech recognition, with support for several engines and APIs, online and offline.
 Speech recognition engine/API support:
 - CMU Sphinx (works offline)
@@ -23,12 +23,15 @@ To use all of the functionality of the library, you should have:
 
 ### Python
 The first software requirement is Python 2.6, 2.7, or Python 3.3+. This is required to use the library.
+The application itself requires Python 3.3+
+
 ### hy
 You need to install hy language. You can Install hy from GitHub with 
 ```sh
 $ pip install git+https://github.com/hylang/hy.git.
 ```
-### PyAudio 
+
+### PyAudio
 PyAudio is required because microphone will be used as input. PyAudio version 0.2.9+ is required, as earlier versions have overflow issues with recording on certain machines.
 The installation instructions are quite good as of PyAudio v0.2.9. For convenience, they are summarized below:
 - On Windows, install PyAudio using Pip: execute in a terminal.
