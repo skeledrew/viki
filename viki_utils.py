@@ -16,11 +16,26 @@ def get_tokens():
     # get any tokens from the file 'tokens'; file not to be committed
     tokens = {}
 
-    with open('tokens') as f:
+    try:
 
-        for line in f:
-            token = line.split(' ')
-            tokens[token[0]] = token[1]
+        with open('tokens') as f:
+
+            for line in f:
+                token = line.split(' ')
+                tokens[token[0]] = token[1]
+
+    except Exception as e:  # should only check for file exists error here
+        print('Error', e)
+
+        with open('token', 'w') as f:
+            # create with placeholders
+            f.write('wit.ai <PLACEHOLDER>')  # Wit.ai
+            f.write('hnd-id <PLACEHOLDER>')  # Houndify
+            f.write('hnd-key <PLACEHOLDER>')
+            f.write('bng.key <PLACEHOLDER>')  # Bing
+            f.write('ibm-usr <PLACEHOLDER>')  # IBM
+            f.write('ibm-pwd <PLACEHOLDER>')
+        return get_tokens()  # do recursive call
     return tokens
 
 def copy_dic(dic):

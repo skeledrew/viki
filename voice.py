@@ -226,7 +226,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         try:
             text = recog.recognize_sphinx(audio)
-            #print('PocketSphinx heard ' + text)
+            print('PocketSphinx heard ' + text)
             o_mem['subq'].put(['ps', text])
             return
 
@@ -242,7 +242,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         try:
             text = recog.recognize_wit(audio, key=WIT_AI_KEY)
-            #print('Wit.ai heard ' + text)
+            print('Wit.ai heard ' + text)
             o_mem['subq'].put(['wit', text])
             return
 
@@ -262,7 +262,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
             text = recog.recognize_google(audio)
-            #print('Google heard ' + text)
+            print('Google heard ' + text)
             o_mem['subq'].put(['ggl', text])
             return
 
@@ -271,6 +271,24 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         except sr.RequestError as e:
             print("Could not request results from Google Speech Recognition service; {0}".format(e))
+
+    if action == 'use_hnd':
+        # recognize speech using Houndify
+        HOUNDIFY_ID = s_mem['tokens']['hnd-id']
+        HOUNDIFY_KEY = s_mem['tokens']['hnd-key']
+
+
+        try:
+            text = recog.recognize_houndify(audio, client_id=HOUNDIFY_ID, client_key=HOUNDIFY_KEY)
+            #print('Houndify heard ' + text)
+            o_mem['subq'].put(['hnd', text])
+            return
+
+        except sr.UnknownValueError:
+            print("Houndify didn't understand anything you said...")
+
+        except sr.RequestError as e:
+            print("Could not request results from Houndify service; {0}".format(e))
     print('Error: Invalid action passed')
 
 def remember(s_mem, o_mem):
@@ -313,7 +331,7 @@ def remember(s_mem, o_mem):
     sys.exit(0)
 
 def answer(s_mem, o_mem={}):
-    print('dbg: enter answer')
+    #print('dbg: enter answer')
     trans = s_mem['trans']
 
     if trans["wit"] == "reload" or trans["ps"] == "reload" or trans["ggl"] == "reload":
@@ -335,7 +353,7 @@ def answer(s_mem, o_mem={}):
             print('error: mq put', [itm, s_mem[itm]], e.args[0])
             pass
     o_mem['llock'].release()
-    print('dbg: exit answer')
+    #print('dbg: exit answer')
     sys.exit(0)
 
 def next_train_wav(cnt=0):

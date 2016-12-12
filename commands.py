@@ -1,4 +1,5 @@
 def voice(params={}):
+    print('dbg: callback')
 
     if not params:
         # return settings if no params
@@ -16,8 +17,8 @@ def voice(params={}):
     if not params['hnd'] == '':
         print('Houndify heard: ' + params['hnd'])
 
-    if not params['att'] == '':
-        print('AT&T heard: ' + params['att'])
+    if not params['bng'] == '':
+        print('Bing heard: ' + params['bng'])
 
     if not params['ibm'] == '':
         print('IBM heard: ' + params['ibm'])
