@@ -1,3 +1,5 @@
 wit.ai WIT_AI_KEY
 hnd-id HOUNDIFY_ID
 hnd-key HOUNDIFY_KEY
+ibm-usr IBM_USERNAME
+ibm-pwd IBM_PASSWORD
