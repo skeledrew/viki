@@ -8,14 +8,13 @@ Speech recognition engine/API support:
 - CMU Sphinx (works offline)
 - Google Speech Recognition
 - Wit.ai
-- Houndify API (coming soon)
-- AT&T (coming soon)
-- IBM (coming soon)
+- Houndify API
+- IBM
 
 ## Requirements
 To use all of the functionality of the library, you should have:
 - Python 2.6, 2.7, or 3.3+ (required)
-- Hy (now optional)
+- Hy (currently optional)
 - PyAudio 0.2.9+ (required only if you need to use microphone input, Microphone)
 - PocketSphinx (required only if you need to use the Sphinx recognizer, recognizer_instance.recognize_sphinx)
 - Wit.ai key (if you want to use wit.ai for speech recognition)
@@ -82,5 +81,16 @@ $ python3 voice.py commands.py
 ```
 
 ## Licence
-AGPLv3
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
