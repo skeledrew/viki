@@ -10,7 +10,12 @@ from viki_utils import *
 from multiprocessing import Process, Lock, Queue, Manager
 from multiprocessing.connection import wait
 import importlib
+import pdb, traceback
 
+
+def dbg_info(type, value, tb):
+    traceback.print_exception(type, value, tb)
+    pdb.pm()
 
 def stt(params={}):
     # use when calling as a module
@@ -45,14 +50,19 @@ def stt(params={}):
             pass
 
 def lual(params={}):
+    #sys.excepthook = dbg_info  # Capture exceptions and start debugger
     s_mem, o_mem = init(params)
+    proc = None
+    proc_cnt = 1
 
     while True:
 
         if not s_mem['listening']:
             # ensure a listener is running
             s_mem['listening'] = True
-            proc = Process(target=listen, args=((s_mem, o_mem))).start()
+            proc = Process(target=listen, args=((s_mem, o_mem)), name='Listener-'+str(proc_cnt)).start()
+            proc_cnt += 1
+            #print(proc.name + ' running')
         msg = None
         o_mem['llock'].acquire()
 
@@ -90,8 +100,9 @@ def lual(params={}):
             sleep(0.2)
             continue
 
-        if action == 'exit':
+        if action == 'exit' and proc:
             # kill children first?
+            proc.terminate()
             print('Goodbye cruel world :\'-(')
             break
 
@@ -153,7 +164,9 @@ def listen(s_mem, o_mem):
     tstamp = '00'
     c_lock = Manager().Lock()  # clone lock
     c_queue = Manager().Queue()  # clone queue
-    s_mem['trans'] = {"time" : "00", "ps" : "", "ggl" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : '', 'hnd': ''}
+    s_mem['trans'] = {"time" : "00", "ps" : "", "ggl" : "", "wit" : "", "ibm" : "", "att" : "", "text" : "", "wavs" : '', 'hnd': '', 'bng': ''}
+    proc = None
+    proc_cnt = 1
 
     with sr.Microphone() as source:
         s_mem['listening'] = True
@@ -174,7 +187,7 @@ def listen(s_mem, o_mem):
             pass
     o_mem['llock'].release()
     c_queue.put(0)
-    Process(target=understand, args=((s_mem, o_mem, 'default', c_queue))).start()
+    Process(target=understand, args=((s_mem, o_mem, 'default', c_queue)), name='Grokker').start()
     print('dbg: exit listen')
     sys.exit(0)
 
@@ -182,11 +195,13 @@ def understand(s_mem, o_mem, action='default', clone=None):
     trans = s_mem['trans']
     recog = s_mem['recog']
     audio = s_mem['audio']
+    proc = None
+    proc_cnt = 1
 
     if action == 'default':
         print('dbg: enter understand')
 
-        clones = clone.get()
+        #clones = clone.get()
         #print('dbg: clone count', clones)
         #clone.put(clones+1)
         sentinels = []
@@ -215,7 +230,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
                 msg = o_mem['subq'].get()
                 s_mem['trans'][msg[0]] = msg[1]
 
-        Process(target=remember, args=((s_mem, o_mem))).start()
+        Process(target=remember, args=((s_mem, o_mem)), name='Memorizer').start()
         print('dbg: exit understand')
         answer(s_mem, o_mem)
         sys.exit(0)
@@ -226,7 +241,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         try:
             text = recog.recognize_sphinx(audio)
-            print('PocketSphinx heard ' + text)
+            #print('PocketSphinx heard ' + text)
             o_mem['subq'].put(['ps', text])
             return
 
@@ -238,11 +253,11 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
     if action == 'use_wit':
         # recognize speech using Wit.ai
-        WIT_AI_KEY = s_mem['tokens']['wit.ai']
+        WIT_AI_KEY = s_mem['tokens']['wit.ai'][:-1]
 
         try:
             text = recog.recognize_wit(audio, key=WIT_AI_KEY)
-            print('Wit.ai heard ' + text)
+            #print('Wit.ai heard ' + text)
             o_mem['subq'].put(['wit', text])
             return
 
@@ -262,7 +277,7 @@ def understand(s_mem, o_mem, action='default', clone=None):
             # to use another API key, use `r.recognize_google(audio, key="GOOGLE_SPEECH_RECOGNITION_API_KEY")`
             # instead of `r.recognize_google(audio)`
             text = recog.recognize_google(audio)
-            print('Google heard ' + text)
+            #print('Google heard ' + text)
             o_mem['subq'].put(['ggl', text])
             return
 
@@ -274,8 +289,8 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
     if action == 'use_hnd':
         # recognize speech using Houndify
-        HOUNDIFY_ID = s_mem['tokens']['hnd-id']
-        HOUNDIFY_KEY = s_mem['tokens']['hnd-key']
+        HOUNDIFY_ID = s_mem['tokens']['hnd-id'][:-1]
+        HOUNDIFY_KEY = s_mem['tokens']['hnd-key'][:-1]
 
 
         try:
@@ -289,7 +304,25 @@ def understand(s_mem, o_mem, action='default', clone=None):
 
         except sr.RequestError as e:
             print("Could not request results from Houndify service; {0}".format(e))
-    print('Error: Invalid action passed')
+
+    if action == 'use_ibm':
+        # recognize speech using IBM Watson
+        IBM_USER = s_mem['tokens']['ibm-usr'][:-1]
+        IBM_PASS = s_mem['tokens']['ibm-pwd'][:-1]
+
+
+        try:
+            text = recog.recognize_ibm(audio, username=IBM_USER, password=IBM_PASS)
+            #print('IBM Watson heard ' + text)
+            o_mem['subq'].put(['ibm', text])
+            return
+
+        except sr.UnknownValueError:
+            print("IBM Watson didn't understand anything you said...")
+
+        except sr.RequestError as e:
+            print("Could not request results from IBM Speech to Text service; {0}".format(e))
+    #print('Error: Invalid action passed')
 
 def remember(s_mem, o_mem):
     o_mem['mlock'].acquire()
@@ -449,8 +482,8 @@ def main(args):
                 params[itm] = extra_args[itm]
             lual(params)
 
-        except:
-            print('Argument must be a Python script "name.ext" with a method called "' + args[0].split('/')[-1].split('.')[0] + '"')
+        except Exception as e:
+            print('Argument must be a Python script "name.ext" with a method called "' + args[0].split('/')[-1].split('.')[0] + '", or another error: ', e)
 
 
 if __name__ == '__main__':

@@ -1,9 +1,9 @@
 def voice(params={}):
-    print('dbg: callback')
+    #print('dbg: callback')
 
     if not params:
         # return settings if no params
-        return {'engines': ['use_ps', 'use_wit', 'use_ggl']}
+        return {'engines': ['use_ps', 'use_wit', 'use_ggl', 'use_hnd', 'use_ibm']}
 
     if not params['ps'] == '':
         print('PocketSphinx heard: ' + params['ps'])
