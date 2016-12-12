@@ -348,12 +348,12 @@ def remember(s_mem, o_mem):
     except sqlite3.Error as e:
 
         if e.args[0] == "no such table: Ears":
-            c.execute("CREATE TABLE Ears (time, ps_trans, g_trans, wit_trans, ibm_trans, att_trans, text, match)")
+            c.execute("CREATE TABLE Ears (time, ps_trans, ggl_trans, wit_trans, hnd_trans, ibm_trans, bng_trans, text, match)")
 
         else:
             print("Error:", e.args[0])
-    entry = (trans["time"], trans["ps"], trans["ggl"], "", "", "", trans["text"], match)
-    c.execute("INSERT INTO Ears VALUES (?, ?, ?, ?, ?, ?, ?, ?)", entry)
+    entry = (trans["time"], trans["ps"], trans["ggl"], trans['wit'], trans['hnd'], trans['ibm'], trans['bng'], trans["text"], match)
+    c.execute("INSERT INTO Ears VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", entry)
     conn.commit()
     c.close()
 
